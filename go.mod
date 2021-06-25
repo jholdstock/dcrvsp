@@ -4,6 +4,7 @@ go 1.13
 
 require (
 	decred.org/dcrwallet/v2 v2.0.0-20210607145951-0ea7e80bd91a
+	github.com/davecgh/go-spew v1.1.1
 	github.com/decred/dcrd/blockchain/stake/v4 v4.0.0-20210614170455-a72516b93b26
 	github.com/decred/dcrd/blockchain/v4 v4.0.0-20210614170455-a72516b93b26
 	github.com/decred/dcrd/chaincfg/chainhash v1.0.3-0.20210525214639-70483c835b7f

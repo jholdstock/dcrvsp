@@ -47,6 +47,8 @@ func TestDatabase(t *testing.T) {
 		"testDeleteTicket":      testDeleteTicket,
 		"testVoteChangeRecords": testVoteChangeRecords,
 		"testHTTPBackup":        testHTTPBackup,
+		"testAddAltSigHistory":  testAddAltSigHistory,
+		"testAltSigHistory":     testAltSigHistory,
 	}
 
 	for testName, test := range tests {
