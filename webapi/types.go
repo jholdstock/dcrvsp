@@ -71,3 +71,16 @@ type ticketStatusResponse struct {
 	VoteChoices     map[string]string `json:"votechoices"`
 	Request         []byte            `json:"request"`
 }
+
+type SetAltSigRequest struct {
+	Timestamp     int64  `json:"timestamp" binding:"required"`
+	TicketHash    string `json:"tickethash" binding:"required"`
+	TicketHex     string `json:"tickethex" binding:"required"`
+	ParentHex     string `json:"parenthex" binding:"required"`
+	AltPubAddress string `json:"altpubaddress"`
+}
+
+type SetAltSigResponse struct {
+	Timestamp int64  `json:"timestamp"`
+	Request   []byte `json:"request"`
+}

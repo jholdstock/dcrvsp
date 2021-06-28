@@ -77,20 +77,38 @@ func testInsertNewTicket(t *testing.T) {
 		t.Fatal("expected an error inserting ticket with duplicate hash")
 	}
 
-	// Inserting a ticket with the same fee address should fail.
-	ticket3 := exampleTicket()
-	ticket3.FeeAddress = ticket.FeeAddress
-	err = db.InsertNewTicket(ticket3)
-	if err == nil {
-		t.Fatal("expected an error inserting ticket with duplicate fee addr")
-	}
-
 	// Inserting a ticket with empty hash should fail.
 	ticket.Hash = ""
 	err = db.InsertNewTicket(ticket)
 	if err == nil {
 		t.Fatal("expected an error inserting ticket with no hash")
 	}
+}
+
+func testHasFeeAddress(t *testing.T) {
+	ticket := exampleTicket()
+	has, err := db.HasFeeAddress(ticket.FeeAddress)
+	if err != nil {
+		t.Fatalf("error retrieving has fee address: %v", err)
+	}
+	if has {
+		t.Fatal("unexpected has for fee address")
+	}
+
+	// Insert a ticket into the database.
+	err = db.InsertNewTicket(ticket)
+	if err != nil {
+		t.Fatalf("error storing ticket in database: %v", err)
+	}
+
+	has, err = db.HasFeeAddress(ticket.FeeAddress)
+	if err != nil {
+		t.Fatalf("error retrieving has fee address: %v", err)
+	}
+	if !has {
+		t.Fatal("unexpected has for fee address")
+	}
+
 }
 
 func testDeleteTicket(t *testing.T) {

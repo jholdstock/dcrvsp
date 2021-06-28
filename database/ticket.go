@@ -27,6 +27,8 @@ const (
 	FeeConfirmed FeeStatus = "confirmed"
 	// FeeError indicates fee tx could not be broadcast due to an error.
 	FeeError FeeStatus = "error"
+	// NoFeeAddress indicates that a fee address has not been set yet.
+	NoFeeAddress FeeStatus = "nofeeaddr"
 )
 
 // TicketOutcome describes the reason a ticket is no longer votable.
@@ -127,6 +129,27 @@ func (t *Ticket) FeeExpired() bool {
 	return now.After(time.Unix(t.FeeExpiration, 0))
 }
 
+func (vdb *VspDatabase) HasFeeAddress(addr string) (bool, error) {
+	errFound := errors.New("found")
+	err := vdb.db.View(func(tx *bolt.Tx) error {
+		ticketBkt := tx.Bucket(vspBktK).Bucket(ticketBktK)
+		return ticketBkt.ForEach(func(k, v []byte) error {
+			tbkt := ticketBkt.Bucket(k)
+			if string(tbkt.Get(feeAddressK)) == addr {
+				return errFound
+			}
+			return nil
+		})
+	})
+	if err != nil {
+		if errors.Is(err, errFound) {
+			return true, nil
+		}
+		return false, err
+	}
+	return false, nil
+}
+
 // InsertNewTicket will insert the provided ticket into the database. Returns an
 // error if either the ticket hash or fee address already exist.
 func (vdb *VspDatabase) InsertNewTicket(ticket Ticket) error {
@@ -141,20 +164,6 @@ func (vdb *VspDatabase) InsertNewTicket(ticket Ticket) error {
 		newTicketBkt, err := ticketBkt.CreateBucket([]byte(ticket.Hash))
 		if err != nil {
 			return fmt.Errorf("could not create bucket for ticket: %w", err)
-		}
-
-		// Error if a ticket already exists with the same fee address.
-		err = ticketBkt.ForEach(func(k, v []byte) error {
-			tbkt := ticketBkt.Bucket(k)
-
-			if string(tbkt.Get(feeAddressK)) == ticket.FeeAddress {
-				return fmt.Errorf("ticket with fee address %s already exists", ticket.FeeAddress)
-			}
-
-			return nil
-		})
-		if err != nil {
-			return err
 		}
 
 		err = putTicketInBucket(newTicketBkt, ticket)

@@ -357,6 +357,7 @@ func vspAuth() gin.HandlerFunc {
 		c.Set("Ticket", ticket)
 		c.Set("KnownTicket", ticketFound)
 		c.Set("CommitmentAddress", commitmentAddress)
+		c.Set("SigningAddress", commitmentAddress)
 	}
 
 }

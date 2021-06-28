@@ -38,6 +38,7 @@ func TestDatabase(t *testing.T) {
 	tests := map[string]func(*testing.T){
 		"testCreateNew":         testCreateNew,
 		"testInsertNewTicket":   testInsertNewTicket,
+		"testHasFeeAddress":     testHasFeeAddress,
 		"testGetTicketByHash":   testGetTicketByHash,
 		"testUpdateTicket":      testUpdateTicket,
 		"testTicketFeeExpired":  testTicketFeeExpired,
