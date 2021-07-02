@@ -92,13 +92,13 @@ func testHasFeeAddress(t *testing.T) {
 		t.Fatalf("error retrieving has fee address: %v", err)
 	}
 	if has {
-		t.Fatal("unexpected has for fee address")
+		t.Fatalf("expected db not to have ticket with fee address %v", ticket.FeeAddress)
 	}
 
 	// Insert a ticket into the database.
 	err = db.InsertNewTicket(ticket)
 	if err != nil {
-		t.Fatalf("error storing ticket in database: %v", err)
+		t.Fatalf("unexpected error storing ticket in database: %v", err)
 	}
 
 	has, err = db.HasFeeAddress(ticket.FeeAddress)
@@ -106,7 +106,7 @@ func testHasFeeAddress(t *testing.T) {
 		t.Fatalf("error retrieving has fee address: %v", err)
 	}
 	if !has {
-		t.Fatal("unexpected has for fee address")
+		t.Fatalf("expected db to have ticket with fee address %v", ticket.FeeAddress)
 	}
 
 }
