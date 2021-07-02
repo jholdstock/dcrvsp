@@ -287,7 +287,7 @@ func (vdb *VspDatabase) AltSigHistory(ticketHash string) ([]*AltSigHistory, erro
 	vdb.ticketsMtx.RLock()
 	defer vdb.ticketsMtx.RUnlock()
 
-	history := make([]*AltSigHistory, 0)
+	history := make([]*AltSigHistory, 0, maxAltSigs)
 	return history, vdb.db.View(func(tx *bolt.Tx) error {
 		ticketBkt := tx.Bucket(vspBktK).Bucket(ticketBktK).Bucket([]byte(ticketHash))
 		if ticketBkt == nil {
@@ -324,7 +324,7 @@ func (vdb *VspDatabase) AddAltSigHistory(ticketHash string, history *AltSigHisto
 	return vdb.db.Update(func(tx *bolt.Tx) error {
 		ticketBkt := tx.Bucket(vspBktK).Bucket(ticketBktK).Bucket([]byte(ticketHash))
 		if ticketBkt == nil {
-			return fmt.Errorf("not bucket for ticket %v", ticketHash)
+			return fmt.Errorf("ot bucket for ticket %v", ticketHash)
 		}
 		histBkt := ticketBkt.Bucket(altSigHistoryK)
 
