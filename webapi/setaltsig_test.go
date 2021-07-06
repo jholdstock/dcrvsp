@@ -258,8 +258,9 @@ func TestSetAltSig(t *testing.T) {
 			r.ServeHTTP(w, c.Request)
 		}
 
+		// Max history is currently one.
 		if test.setMaxHistory {
-			for i := 0; i < 3; i++ {
+			for i := 0; i < 1; i++ {
 				request()
 			}
 		}
