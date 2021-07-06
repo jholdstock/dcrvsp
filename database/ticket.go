@@ -41,7 +41,7 @@ const (
 	// maxAltSigs is the maximum number of signature history to allow into
 	// the database for a ticket. It is necessary to limit records to avoid
 	// remote attackers filling the database with arbitrary data.
-	maxAltSigs = 3
+	maxAltSigs = 1
 )
 
 // ErrMaxAltSigs is returned when attempting to update a ticket's alternate

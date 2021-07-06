@@ -55,9 +55,6 @@ type v1Ticket struct {
 	FeeTxHash         string            `json:"fhsh"`
 	FeeTxStatus       FeeStatus         `json:"fsts"`
 	Outcome           TicketOutcome     `json:"otcme"`
-	// AltSigAddress was added later. Here to allow converting to the new
-	// type.
-	AltSigAddress string
 }
 
 // Upgrade will update the database to the latest known version.

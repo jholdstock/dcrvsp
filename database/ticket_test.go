@@ -366,29 +366,17 @@ func testAddAltSigHistory(t *testing.T) {
 		t.Fatalf("unexpected error storing ticket in database: %v", err)
 	}
 
-	// First three inserts are fine.
-	// First insert.
+	// First insert is fine.
 	if err := db.AddAltSigHistory(ticket.Hash, tAltHist()); err != nil {
 		t.Fatalf("unexpected error for first alt history: %v", err)
 	}
 
-	// Same history is also fine.
-	sameHist := tAltHist()
-	// Second insert.
-	if err := db.AddAltSigHistory(ticket.Hash, sameHist); err != nil {
-		t.Fatalf("unexpected error for second alt history: %v", err)
-	}
-	// Third insert.
-	if err := db.AddAltSigHistory(ticket.Hash, sameHist); err != nil {
-		t.Fatalf("unexpected error for third alt history: %v", err)
-	}
-
-	// Over the max, currently 3, should error.
-	if err := db.AddAltSigHistory(ticket.Hash, sameHist); err == nil {
-		t.Fatalf("expected error for fourth alt history: %v", err)
+	// Over the max, currently 1, should error.
+	if err := db.AddAltSigHistory(ticket.Hash, tAltHist()); err == nil {
+		t.Fatalf("expected error for second alt history: %v", err)
 	}
 	if err := db.AddAltSigHistory(ticket.Hash, tAltHist()); err == nil {
-		t.Fatalf("expected error for fifth alt history: %v", err)
+		t.Fatalf("expected error for third alt history: %v", err)
 	}
 }
 
@@ -419,9 +407,9 @@ func testAltSigHistory(t *testing.T) {
 		t.Fatal("expected no history for new ticket")
 	}
 
-	// First three additions should return the correct appended history.
-	wantHist := make([]*AltSigHistory, 0, 3)
-	for i := 0; i < 3; i++ {
+	// First addition should return the correct appended history.
+	wantHist := make([]*AltSigHistory, 0, 1)
+	for i := 0; i < 1; i++ {
 		altHist := tAltHist()
 		wantHist = append(wantHist, altHist)
 		if err := db.AddAltSigHistory(ticket.Hash, altHist); err != nil {
@@ -442,12 +430,12 @@ func testAltSigHistory(t *testing.T) {
 
 	// Further additions should error and not change the history.
 	if err := db.AddAltSigHistory(ticket.Hash, tAltHist()); err == nil {
-		t.Fatalf("expected error for fourth alt history addition")
+		t.Fatalf("expected error for second alt history addition")
 	}
 
 	history, err = db.AltSigHistory(ticket.Hash)
 	if err != nil {
-		t.Fatalf("unexpected error for fourth alt history: %v", err)
+		t.Fatalf("unexpected error for second alt history: %v", err)
 	}
 	if !reflect.DeepEqual(wantHist, history) {
 		t.Fatal("want history different than actual")
