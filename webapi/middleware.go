@@ -338,7 +338,7 @@ func vspAuth() gin.HandlerFunc {
 		if ticketFound {
 			// If an alternate signing address is set, try it.
 			// Fall back to the commitment address.
-			if ticket.AltSigAddress != "" && validate(ticket.AltSigAddress, ticket.CommitmentAddress, true, false) {
+			if ticket.AltSigAddress != "" && validate(ticket.CommitmentAddress, ticket.AltSigAddress, true, false) {
 				return
 			}
 			_ = validate(ticket.CommitmentAddress, ticket.CommitmentAddress, true, true)
