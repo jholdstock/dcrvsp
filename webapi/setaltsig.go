@@ -5,7 +5,7 @@
 package webapi
 
 import (
-	"encoding/hex"
+	"encoding/base64"
 	"errors"
 	"time"
 
@@ -93,7 +93,7 @@ func setAltSig(c *gin.Context) {
 
 	addHistory := func() error {
 		sigStr := c.GetHeader("VSP-Client-Signature")
-		sig, err := hex.DecodeString(sigStr)
+		sig, err := base64.StdEncoding.DecodeString(sigStr)
 		if err != nil {
 			log.Tracef("%s: error decoding signature string (ticketHash=%s, sig=%s): %v", funcName, ticketHash, sigStr, err)
 			return err
