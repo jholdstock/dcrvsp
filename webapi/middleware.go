@@ -307,9 +307,8 @@ func vspAuth() gin.HandlerFunc {
 
 		// validate validates the signature in the request as signing
 		// the request body with private key corresponding to sAddr.
-		// fatal will cause the client to be notified of failure if
-		// verification fails. Returns wether verification succeeded and
-		// sets some header values if success.
+		// Verification failure results in the client getting notified
+		// of the cause. Returns whether verification succeeded.
 		validate := func(cAddr, sAddr string, kt, fatal bool) bool {
 			// Validate request signature to ensure ticket ownership.
 			err = validateSignature(reqBytes, sAddr, c)
