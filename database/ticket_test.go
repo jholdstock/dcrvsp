@@ -386,7 +386,7 @@ func testAltSigHistory(t *testing.T) {
 	// No ticket means no history.
 	history, err := db.AltSigHistory(ticket.Hash)
 	if err != nil {
-		t.Fatalf("unexpected error for no ticket in db: %v", err)
+		t.Fatalf("unexpected error fetching alt signature history for ticket: %v", err)
 	}
 	if len(history) != 0 {
 		t.Fatal("expected no history for no ticket in db")
@@ -401,7 +401,7 @@ func testAltSigHistory(t *testing.T) {
 	// No history added yet.
 	history, err = db.AltSigHistory(ticket.Hash)
 	if err != nil {
-		t.Fatalf("unexpected error for new: %v", err)
+		t.Fatalf("unexpected error fetching alt signature history for ticket: %v", err)
 	}
 	if len(history) != 0 {
 		t.Fatal("expected no history for new ticket")
@@ -421,7 +421,7 @@ func testAltSigHistory(t *testing.T) {
 			t.Fatalf("unexpected error for alt history %d: %v", i+1, err)
 		}
 		if len(history) != i+1 {
-			t.Fatalf("expected history len of %d but got %d", i+1, len(history))
+			t.Fatalf("expected history length of %d but got %d", i+1, len(history))
 		}
 		if !reflect.DeepEqual(wantHist, history) {
 			t.Fatal("want history different than actual")

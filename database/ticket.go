@@ -315,7 +315,7 @@ func (vdb *VspDatabase) AltSigHistory(ticketHash string) ([]*AltSigHistory, erro
 // exists for this ticket an error is returned. If the altSigHistory bucket does
 // not yet exist for the ticket, one is created. Records are keyed by number of
 // records plus one. Only maxAltSigs are allowed, and trying to add more returns
-// error. These records should never be deleted or altered as the server needs
+// an error. These records should never be deleted or altered as the server needs
 // them to prove the client's current alternate signature was indeed chosen by
 // the client.
 func (vdb *VspDatabase) AddAltSigHistory(ticketHash string, history *AltSigHistory) error {
