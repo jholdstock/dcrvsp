@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
@@ -266,9 +265,6 @@ func TestSetAltSig(t *testing.T) {
 		}
 		request()
 
-		resp := w.Result()
-		body, _ := ioutil.ReadAll(resp.Body)
-		fmt.Printf("\nThe response body for %q: %s\n\n", test.name, string(body))
 		if test.wantCode != w.Code {
 			t.Errorf("%q: expected status %d, got %d", test.name, test.wantCode, w.Code)
 		}
