@@ -71,9 +71,10 @@ Set an alternate signing address for a ticket. The ticket must be valid and will
 be transmitted to the network if not found. If set, the vsp will check that a
 signature is good for this address and fallback to the commitment address if not.
 The address must be valid for the network and a pay to secp256k1 ecdsa pubkey
-hash script. Can be cleared by sending `""` as the `altpubaddress`. The key may
-be set a maximum of three times. Further requests to set a new key will be
-rejected, but the key may still be cleared.
+hash script. Can be cleared by sending `""` as the `altpubaddress`. The key
+currently can only be set once, users are advised to crosscheck inputs as many
+times as necessary. Further requests to set a new key will be rejected, but the
+key may still be cleared.
 
 - `POST /api/v3/setaltsig`
 
