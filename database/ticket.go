@@ -6,6 +6,7 @@ package database
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -26,6 +27,8 @@ const (
 	FeeConfirmed FeeStatus = "confirmed"
 	// FeeError indicates fee tx could not be broadcast due to an error.
 	FeeError FeeStatus = "error"
+	// NoFeeAddress indicates that a fee address has not been set yet.
+	NoFeeAddress FeeStatus = "nofeeaddr"
 )
 
 // TicketOutcome describes the reason a ticket is no longer votable.
@@ -37,13 +40,22 @@ const (
 	Revoked TicketOutcome = "revoked"
 	// Voted indicates the ticket has already voted.
 	Voted TicketOutcome = "voted"
+	// maxAltSigs is the maximum number of signature history to allow into
+	// the database for a ticket. It is necessary to limit records to avoid
+	// remote attackers filling the database with arbitrary data.
+	maxAltSigs = 1
 )
+
+// ErrMaxAltSigs is returned when attempting to update a ticket's alternate
+// signature but maxAltsSigs or more history is already in the database.
+var ErrMaxAltSigs = errors.New("max alt sigs")
 
 // The keys used to store ticket values in the database.
 var (
 	hashK              = []byte("Hash")
 	purchaseHeightK    = []byte("PurchaseHeight")
 	commitmentAddressK = []byte("CommitmentAddress")
+	altSigAddressK     = []byte("AltSigAddress")
 	feeAddressIndexK   = []byte("FeeAddressIndex")
 	feeAddressK        = []byte("FeeAddress")
 	feeAmountK         = []byte("FeeAmount")
@@ -55,8 +67,27 @@ var (
 	feeTxHashK         = []byte("FeeTxHash")
 	feeTxStatusK       = []byte("FeeTxStatus")
 	outcomeK           = []byte("Outcome")
+
+	altSigHistoryK     = []byte("AltSigHistory")
+	altSigHistoryAddrK = []byte("AltSigHistoryAddr")
+	altSigHistoryReqK  = []byte("AltSigHistoryReq")
+	altSigHistorySigK  = []byte("AltSigHistorySig")
 )
 
+// AltSigHistory holds the information needed to prove that a client changed
+// their alternate signature address.
+type AltSigHistory struct {
+	// Addr is the address used to validate Sig.
+	Addr string
+	// Req is the original request to set an alternate signature.
+	Req []byte
+	// Sig is the request's signature signed by the private key the
+	// corresponds to Addr.
+	Sig []byte
+}
+
+// Ticket represents the structured form of a ticket in the database. It does
+// not include the alternate signature history.
 type Ticket struct {
 	Hash              string
 	PurchaseHeight    int64
@@ -86,11 +117,37 @@ type Ticket struct {
 	// Outcome is set once a ticket is either voted or revoked. An empty outcome
 	// indicates that a ticket is still votable.
 	Outcome TicketOutcome
+
+	// AltSigAddress is an optional address used to validate messages sent
+	// to the vspd. This should not be updated without calling
+	// AddAltSigHistory first.
+	AltSigAddress string
 }
 
 func (t *Ticket) FeeExpired() bool {
 	now := time.Now()
 	return now.After(time.Unix(t.FeeExpiration, 0))
+}
+
+func (vdb *VspDatabase) HasFeeAddress(addr string) (bool, error) {
+	errFound := errors.New("found")
+	err := vdb.db.View(func(tx *bolt.Tx) error {
+		ticketBkt := tx.Bucket(vspBktK).Bucket(ticketBktK)
+		return ticketBkt.ForEach(func(k, v []byte) error {
+			tbkt := ticketBkt.Bucket(k)
+			if string(tbkt.Get(feeAddressK)) == addr {
+				return errFound
+			}
+			return nil
+		})
+	})
+	if err != nil {
+		if errors.Is(err, errFound) {
+			return true, nil
+		}
+		return false, err
+	}
+	return false, nil
 }
 
 // InsertNewTicket will insert the provided ticket into the database. Returns an
@@ -107,20 +164,6 @@ func (vdb *VspDatabase) InsertNewTicket(ticket Ticket) error {
 		newTicketBkt, err := ticketBkt.CreateBucket([]byte(ticket.Hash))
 		if err != nil {
 			return fmt.Errorf("could not create bucket for ticket: %w", err)
-		}
-
-		// Error if a ticket already exists with the same fee address.
-		err = ticketBkt.ForEach(func(k, v []byte) error {
-			tbkt := ticketBkt.Bucket(k)
-
-			if string(tbkt.Get(feeAddressK)) == ticket.FeeAddress {
-				return fmt.Errorf("ticket with fee address %s already exists", ticket.FeeAddress)
-			}
-
-			return nil
-		})
-		if err != nil {
-			return err
 		}
 
 		err = putTicketInBucket(newTicketBkt, ticket)
@@ -175,6 +218,9 @@ func putTicketInBucket(bkt *bolt.Bucket, ticket Ticket) error {
 	if err = bkt.Put(confirmedK, boolToBytes(ticket.Confirmed)); err != nil {
 		return err
 	}
+	if err = bkt.Put(altSigAddressK, []byte(ticket.AltSigAddress)); err != nil {
+		return err
+	}
 
 	jsonVoteChoices, err := json.Marshal(ticket.VoteChoices)
 	if err != nil {
@@ -201,6 +247,7 @@ func getTicketFromBkt(bkt *bolt.Bucket) (Ticket, error) {
 	ticket.FeeExpiration = bytesToInt64(bkt.Get(feeExpirationK))
 
 	ticket.Confirmed = bytesToBool(bkt.Get(confirmedK))
+	ticket.AltSigAddress = string(bkt.Get(altSigAddressK))
 
 	ticket.VoteChoices = make(map[string]string)
 	err := json.Unmarshal(bkt.Get(voteChoicesK), &ticket.VoteChoices)
@@ -241,6 +288,84 @@ func (vdb *VspDatabase) UpdateTicket(ticket Ticket) error {
 		}
 
 		return putTicketInBucket(bkt, ticket)
+	})
+}
+
+// AltSigHistory retrieves the history of changes to a ticket's alternate signature.
+func (vdb *VspDatabase) AltSigHistory(ticketHash string) ([]*AltSigHistory, error) {
+	vdb.ticketsMtx.RLock()
+	defer vdb.ticketsMtx.RUnlock()
+
+	history := make([]*AltSigHistory, 0, maxAltSigs)
+	return history, vdb.db.View(func(tx *bolt.Tx) error {
+		ticketBkt := tx.Bucket(vspBktK).Bucket(ticketBktK).Bucket([]byte(ticketHash))
+		if ticketBkt == nil {
+			return nil
+		}
+		histBkt := ticketBkt.Bucket(altSigHistoryK)
+		if histBkt == nil {
+			return nil
+		}
+		// BucketN includes the history bucket.
+		nBkts := histBkt.Stats().BucketN - 1
+		for i := 0; i < nBkts; i++ {
+			bkt := histBkt.Bucket([]byte{byte(i)})
+			h := new(AltSigHistory)
+			h.Addr = string(bkt.Get(altSigHistoryAddrK))
+			h.Req = bkt.Get(altSigHistoryReqK)
+			h.Sig = bkt.Get(altSigHistorySigK)
+			history = append(history, h)
+		}
+		return nil
+	})
+}
+
+// AddAltSigHistory adds an alternate signature record to history. If no bucket
+// exists for this ticket an error is returned. If the altSigHistory bucket does
+// not yet exist for the ticket, one is created. Records are keyed by number of
+// records plus one. Only maxAltSigs are allowed, and trying to add more returns
+// an error. These records should never be deleted or altered as the server needs
+// them to prove the client's current alternate signature was indeed chosen by
+// the client.
+func (vdb *VspDatabase) AddAltSigHistory(ticketHash string, history *AltSigHistory) error {
+	vdb.ticketsMtx.Lock()
+	defer vdb.ticketsMtx.Unlock()
+	return vdb.db.Update(func(tx *bolt.Tx) error {
+		ticketBkt := tx.Bucket(vspBktK).Bucket(ticketBktK).Bucket([]byte(ticketHash))
+		if ticketBkt == nil {
+			return fmt.Errorf("ot bucket for ticket %v", ticketHash)
+		}
+		histBkt := ticketBkt.Bucket(altSigHistoryK)
+
+		put := func(i int) error {
+			bkt, err := histBkt.CreateBucket([]byte{byte(i)})
+			if err != nil {
+				return fmt.Errorf("could not create alt sig history bucket for ticket: %w", err)
+			}
+			if err := bkt.Put(altSigHistoryAddrK, []byte(history.Addr)); err != nil {
+				return err
+			}
+			if err := bkt.Put(altSigHistoryReqK, history.Req); err != nil {
+				return err
+			}
+			return bkt.Put(altSigHistorySigK, history.Sig)
+		}
+
+		if histBkt == nil {
+			var err error
+			histBkt, err = ticketBkt.CreateBucket(altSigHistoryK)
+			if err != nil {
+				return fmt.Errorf("could not create alt sig history buckets for ticket: %w", err)
+			}
+			return put(0)
+		}
+
+		// BucketN includes the history bucket.
+		nBkts := histBkt.Stats().BucketN - 1
+		if nBkts >= maxAltSigs {
+			return fmt.Errorf("cannot add alternate signature, %w, already at max of %d", ErrMaxAltSigs, maxAltSigs)
+		}
+		return put(nBkts)
 	})
 }
 

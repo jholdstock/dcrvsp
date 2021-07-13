@@ -13,6 +13,8 @@ import (
 	bolt "go.etcd.io/bbolt"
 )
 
+const addrCharset = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
 var seededRand = rand.New(rand.NewSource(time.Now().UnixNano()))
 
 // randString randomly generates a string of the requested length, using only
@@ -25,9 +27,16 @@ func randString(length int, charset string) string {
 	return string(b)
 }
 
+func randBytes(n int) []byte {
+	slice := make([]byte, n)
+	if _, err := seededRand.Read(slice); err != nil {
+		panic(err)
+	}
+	return slice
+}
+
 func exampleTicket() Ticket {
 	const hexCharset = "1234567890abcdef"
-	const addrCharset = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
 	return Ticket{
 		Hash:              randString(64, hexCharset),
@@ -42,6 +51,7 @@ func exampleTicket() Ticket {
 		FeeTxHex:          randString(504, hexCharset),
 		FeeTxHash:         randString(64, hexCharset),
 		FeeTxStatus:       FeeBroadcast,
+		AltSigAddress:     randString(35, addrCharset),
 	}
 }
 
@@ -67,20 +77,38 @@ func testInsertNewTicket(t *testing.T) {
 		t.Fatal("expected an error inserting ticket with duplicate hash")
 	}
 
-	// Inserting a ticket with the same fee address should fail.
-	ticket3 := exampleTicket()
-	ticket3.FeeAddress = ticket.FeeAddress
-	err = db.InsertNewTicket(ticket3)
-	if err == nil {
-		t.Fatal("expected an error inserting ticket with duplicate fee addr")
-	}
-
 	// Inserting a ticket with empty hash should fail.
 	ticket.Hash = ""
 	err = db.InsertNewTicket(ticket)
 	if err == nil {
 		t.Fatal("expected an error inserting ticket with no hash")
 	}
+}
+
+func testHasFeeAddress(t *testing.T) {
+	ticket := exampleTicket()
+	has, err := db.HasFeeAddress(ticket.FeeAddress)
+	if err != nil {
+		t.Fatalf("error retrieving has fee address: %v", err)
+	}
+	if has {
+		t.Fatalf("expected db not to have ticket with fee address %v", ticket.FeeAddress)
+	}
+
+	// Insert a ticket into the database.
+	err = db.InsertNewTicket(ticket)
+	if err != nil {
+		t.Fatalf("unexpected error storing ticket in database: %v", err)
+	}
+
+	has, err = db.HasFeeAddress(ticket.FeeAddress)
+	if err != nil {
+		t.Fatalf("error retrieving has fee address: %v", err)
+	}
+	if !has {
+		t.Fatalf("expected db to have ticket with fee address %v", ticket.FeeAddress)
+	}
+
 }
 
 func testDeleteTicket(t *testing.T) {
@@ -136,7 +164,8 @@ func testGetTicketByHash(t *testing.T) {
 		retrieved.VotingWIF != ticket.VotingWIF ||
 		retrieved.FeeTxHex != ticket.FeeTxHex ||
 		retrieved.FeeTxHash != ticket.FeeTxHash ||
-		retrieved.FeeTxStatus != ticket.FeeTxStatus {
+		retrieved.FeeTxStatus != ticket.FeeTxStatus ||
+		retrieved.AltSigAddress != ticket.AltSigAddress {
 		t.Fatal("retrieved ticket value didnt match expected")
 	}
 
@@ -331,4 +360,102 @@ func testCountTickets(t *testing.T) {
 	}
 
 	count("revoked", 1, 1, 1)
+}
+
+func tAltHist() *AltSigHistory {
+	return &AltSigHistory{
+		Addr: randString(35, addrCharset),
+		Req:  randBytes(1000),
+		Sig:  randBytes(72),
+	}
+}
+
+func testAddAltSigHistory(t *testing.T) {
+	ticket := exampleTicket()
+
+	// This should error if no ticket exists for hash in the database.
+	if err := db.AddAltSigHistory(ticket.Hash, tAltHist()); err == nil {
+		t.Fatal("expected error for no ticket in db")
+	}
+
+	// Insert a ticket into the database.
+	err := db.InsertNewTicket(ticket)
+	if err != nil {
+		t.Fatalf("unexpected error storing ticket in database: %v", err)
+	}
+
+	// First insert is fine.
+	if err := db.AddAltSigHistory(ticket.Hash, tAltHist()); err != nil {
+		t.Fatalf("unexpected error for first alt history: %v", err)
+	}
+
+	// Over the max, currently 1, should error.
+	if err := db.AddAltSigHistory(ticket.Hash, tAltHist()); err == nil {
+		t.Fatalf("expected error for second alt history: %v", err)
+	}
+	if err := db.AddAltSigHistory(ticket.Hash, tAltHist()); err == nil {
+		t.Fatalf("expected error for third alt history: %v", err)
+	}
+}
+
+func testAltSigHistory(t *testing.T) {
+	ticket := exampleTicket()
+
+	// No ticket means no history.
+	history, err := db.AltSigHistory(ticket.Hash)
+	if err != nil {
+		t.Fatalf("unexpected error fetching alt signature history for ticket: %v", err)
+	}
+	if len(history) != 0 {
+		t.Fatal("expected no history for no ticket in db")
+	}
+
+	// Insert a ticket into the database.
+	err = db.InsertNewTicket(ticket)
+	if err != nil {
+		t.Fatalf("unexpected error storing ticket in database: %v", err)
+	}
+
+	// No history added yet.
+	history, err = db.AltSigHistory(ticket.Hash)
+	if err != nil {
+		t.Fatalf("unexpected error fetching alt signature history for ticket: %v", err)
+	}
+	if len(history) != 0 {
+		t.Fatal("expected no history for new ticket")
+	}
+
+	// First addition should return the correct appended history.
+	wantHist := make([]*AltSigHistory, 0, 1)
+	for i := 0; i < 1; i++ {
+		altHist := tAltHist()
+		wantHist = append(wantHist, altHist)
+		if err := db.AddAltSigHistory(ticket.Hash, altHist); err != nil {
+			t.Fatalf("unexpected error for first alt history: %v", err)
+		}
+
+		history, err = db.AltSigHistory(ticket.Hash)
+		if err != nil {
+			t.Fatalf("unexpected error for alt history %d: %v", i+1, err)
+		}
+		if len(history) != i+1 {
+			t.Fatalf("expected history length of %d but got %d", i+1, len(history))
+		}
+		if !reflect.DeepEqual(wantHist, history) {
+			t.Fatal("want history different than actual")
+		}
+	}
+
+	// Further additions should error and not change the history.
+	if err := db.AddAltSigHistory(ticket.Hash, tAltHist()); err == nil {
+		t.Fatalf("expected error for second alt history addition")
+	}
+
+	history, err = db.AltSigHistory(ticket.Hash)
+	if err != nil {
+		t.Fatalf("unexpected error for second alt history: %v", err)
+	}
+	if !reflect.DeepEqual(wantHist, history) {
+		t.Fatal("want history different than actual")
+	}
 }

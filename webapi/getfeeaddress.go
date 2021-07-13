@@ -125,8 +125,10 @@ func feeAddress(c *gin.Context) {
 		return
 	}
 
+	hasFeeAddr := ticket.FeeTxStatus != database.NoFeeAddress
+
 	// VSP already knows this ticket and has already issued it a fee address.
-	if knownTicket {
+	if knownTicket && hasFeeAddr {
 
 		// If the expiry period has passed we need to issue a new fee.
 		now := time.Now()
@@ -162,7 +164,7 @@ func feeAddress(c *gin.Context) {
 	}
 
 	// Beyond this point we are processing a new ticket which the VSP has not
-	// seen before.
+	// seen before or one that has no fee address.
 
 	fee, err := getCurrentFee(dcrdClient)
 	if err != nil {
@@ -174,6 +176,19 @@ func feeAddress(c *gin.Context) {
 	newAddress, newAddressIdx, err := getNewFeeAddress(db, addrGen)
 	if err != nil {
 		log.Errorf("%s: getNewFeeAddress error (ticketHash=%s): %v", funcName, ticketHash, err)
+		sendError(errInternalError, c)
+		return
+	}
+
+	// Make sure this address is not in the database.
+	has, err := db.HasFeeAddress(newAddress)
+	if err != nil {
+		log.Errorf("%s: db.HasFeeAddress error (ticketHash=%s): %v", funcName, ticketHash, err)
+		sendError(errInternalError, c)
+		return
+	}
+	if has {
+		log.Errorf("%s: fee address exists in the database (ticketHash=%s newFeeAddress)", funcName, ticketHash, newAddress)
 		sendError(errInternalError, c)
 		return
 	}
@@ -190,28 +205,46 @@ func feeAddress(c *gin.Context) {
 		purchaseHeight = rawTicket.BlockHeight
 	}
 
-	dbTicket := database.Ticket{
-		Hash:              ticketHash,
-		PurchaseHeight:    purchaseHeight,
-		CommitmentAddress: commitmentAddress,
-		FeeAddressIndex:   newAddressIdx,
-		FeeAddress:        newAddress,
-		Confirmed:         confirmed,
-		FeeAmount:         int64(fee),
-		FeeExpiration:     expire,
-		FeeTxStatus:       database.NoFee,
+	existStatus := "new"
+	if knownTicket {
+		existStatus = "existing"
+		ticket.FeeAddressIndex = newAddressIdx
+		ticket.FeeAddress = newAddress
+		ticket.FeeExpiration = now.Add(feeAddressExpiration).Unix()
+		ticket.FeeAmount = int64(fee)
+		ticket.Confirmed = confirmed
+		ticket.PurchaseHeight = purchaseHeight
+		err = db.UpdateTicket(ticket)
+		if err != nil {
+			log.Errorf("%s: db.UpdateTicket error, failed to update fee expiry (ticketHash=%s): %v",
+				funcName, ticket.Hash, err)
+			sendError(errInternalError, c)
+			return
+		}
+	} else {
+		dbTicket := database.Ticket{
+			Hash:              ticketHash,
+			PurchaseHeight:    purchaseHeight,
+			CommitmentAddress: commitmentAddress,
+			FeeAddressIndex:   newAddressIdx,
+			FeeAddress:        newAddress,
+			Confirmed:         confirmed,
+			FeeAmount:         int64(fee),
+			FeeExpiration:     expire,
+			FeeTxStatus:       database.NoFee,
+		}
+
+		err = db.InsertNewTicket(dbTicket)
+		if err != nil {
+			log.Errorf("%s: db.InsertNewTicket failed (ticketHash=%s): %v", funcName, ticketHash, err)
+			sendError(errInternalError, c)
+			return
+		}
 	}
 
-	err = db.InsertNewTicket(dbTicket)
-	if err != nil {
-		log.Errorf("%s: db.InsertNewTicket failed (ticketHash=%s): %v", funcName, ticketHash, err)
-		sendError(errInternalError, c)
-		return
-	}
-
-	log.Debugf("%s: Fee address created for new ticket: (tktConfirmed=%t, feeAddrIdx=%d, "+
+	log.Debugf("%s: Fee address created for %s ticket: (tktConfirmed=%t, feeAddrIdx=%d, "+
 		"feeAddr=%s, feeAmt=%s, ticketHash=%s)",
-		funcName, confirmed, newAddressIdx, newAddress, fee, ticketHash)
+		funcName, existStatus, confirmed, newAddressIdx, newAddress, fee, ticketHash)
 
 	sendJSONResponse(feeAddressResponse{
 		Timestamp:  now.Unix(),

@@ -40,6 +40,26 @@ func ticketBucketUpgrade(db *bolt.DB) error {
 				return fmt.Errorf("could not unmarshal ticket: %w", err)
 			}
 
+			newTicket := Ticket{
+				Hash:              ticket.Hash,
+				PurchaseHeight:    ticket.PurchaseHeight,
+				CommitmentAddress: ticket.CommitmentAddress,
+				FeeAddressIndex:   ticket.FeeAddressIndex,
+				FeeAddress:        ticket.FeeAddress,
+				FeeAmount:         ticket.FeeAmount,
+				FeeExpiration:     ticket.FeeExpiration,
+				Confirmed:         ticket.Confirmed,
+				VotingWIF:         ticket.VotingWIF,
+				VoteChoices:       ticket.VoteChoices,
+				FeeTxHex:          ticket.FeeTxHex,
+				FeeTxHash:         ticket.FeeTxHash,
+				FeeTxStatus:       ticket.FeeTxStatus,
+				Outcome:           ticket.Outcome,
+				// AltSigAddress was added later and must be
+				// empty for a v1 Ticket. Added here for visibility.
+				AltSigAddress: "",
+			}
+
 			// Delete the old ticket.
 			err = ticketBkt.Delete(k)
 			if err != nil {
@@ -52,7 +72,7 @@ func ticketBucketUpgrade(db *bolt.DB) error {
 				return fmt.Errorf("could not create new ticket bucket: %w", err)
 			}
 
-			err = putTicketInBucket(newBkt, Ticket(ticket))
+			err = putTicketInBucket(newBkt, newTicket)
 			if err != nil {
 				return fmt.Errorf("could not put new ticket in bucket: %w", err)
 			}

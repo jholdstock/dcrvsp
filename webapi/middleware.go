@@ -305,58 +305,76 @@ func vspAuth() gin.HandlerFunc {
 			return
 		}
 
-		// If the ticket was found in the database, we already know its
-		// commitment address. Otherwise we need to get it from the chain.
-		var commitmentAddress string
-		if ticketFound {
-			commitmentAddress = ticket.CommitmentAddress
-		} else {
-			dcrdClient := c.MustGet("DcrdClient").(*rpc.DcrdRPC)
-
-			resp, err := dcrdClient.GetRawTransaction(hash)
+		// validate validates the signature in the request as signing
+		// the request body with private key corresponding to sAddr.
+		// Verification failure results in the client getting notified
+		// of the cause. Returns whether verification succeeded.
+		validate := func(cAddr, sAddr string, kt, fatal bool) bool {
+			// Validate request signature to ensure ticket ownership.
+			err = validateSignature(reqBytes, sAddr, c)
 			if err != nil {
-				log.Errorf("%s: dcrd.GetRawTransaction for ticket failed (ticketHash=%s): %v", funcName, hash, err)
-				sendError(errInternalError, c)
-				return
+				log.Warnf("%s: Bad signature (clientIP=%s, ticketHash=%s): %v", funcName, c.ClientIP(), hash, err)
+				if fatal {
+					sendError(errBadSignature, c)
+				}
+				return false
 			}
+			log.Tracef("%s: Authed user signature (clientIP=%s, ticketHash=%s)", funcName, c.ClientIP(), hash)
 
-			msgTx, err := decodeTransaction(resp.Hex)
-			if err != nil {
-				log.Errorf("%s: Failed to decode ticket hex (ticketHash=%s): %v", funcName, ticket.Hash, err)
-				sendError(errInternalError, c)
-				return
-			}
-
-			err = isValidTicket(msgTx)
-			if err != nil {
-				log.Warnf("%s: Invalid ticket (clientIP=%s, ticketHash=%s): %v", funcName, c.ClientIP(), hash, err)
-				sendError(errInvalidTicket, c)
-				return
-			}
-
-			addr, err := stake.AddrFromSStxPkScrCommitment(msgTx.TxOut[1].PkScript, cfg.NetParams)
-			if err != nil {
-				log.Errorf("%s: AddrFromSStxPkScrCommitment error (ticketHash=%s): %v", funcName, hash, err)
-				sendError(errInternalError, c)
-				return
-			}
-
-			commitmentAddress = addr.String()
+			// Add ticket information to context so downstream handlers don't need
+			// to access the db for it.
+			c.Set("Ticket", ticket)
+			c.Set("KnownTicket", kt)
+			c.Set("CommitmentAddress", cAddr)
+			c.Set("SigningAddress", sAddr)
+			return true
 		}
 
-		// Validate request signature to ensure ticket ownership.
-		err = validateSignature(reqBytes, commitmentAddress, c)
+		// If the ticket was found in the database, we already know its
+		// commitment address. Otherwise we need to get it from the chain.
+		// The signingAddress is the alternate signature address if
+		// present for the ticket. Otherwise the commitment address is used.
+		if ticketFound {
+			// If an alternate signing address is set, try it.
+			// Fall back to the commitment address.
+			if ticket.AltSigAddress != "" && validate(ticket.CommitmentAddress, ticket.AltSigAddress, true, false) {
+				return
+			}
+			_ = validate(ticket.CommitmentAddress, ticket.CommitmentAddress, true, true)
+			return
+		}
+		dcrdClient := c.MustGet("DcrdClient").(*rpc.DcrdRPC)
+
+		resp, err := dcrdClient.GetRawTransaction(hash)
 		if err != nil {
-			log.Warnf("%s: Bad signature (clientIP=%s, ticketHash=%s): %v", funcName, c.ClientIP(), hash, err)
-			sendError(errBadSignature, c)
+			log.Errorf("%s: dcrd.GetRawTransaction for ticket failed (ticketHash=%s): %v", funcName, hash, err)
+			sendError(errInternalError, c)
 			return
 		}
 
-		// Add ticket information to context so downstream handlers don't need
-		// to access the db for it.
-		c.Set("Ticket", ticket)
-		c.Set("KnownTicket", ticketFound)
-		c.Set("CommitmentAddress", commitmentAddress)
+		msgTx, err := decodeTransaction(resp.Hex)
+		if err != nil {
+			log.Errorf("%s: Failed to decode ticket hex (ticketHash=%s): %v", funcName, ticket.Hash, err)
+			sendError(errInternalError, c)
+			return
+		}
+
+		err = isValidTicket(msgTx)
+		if err != nil {
+			log.Warnf("%s: Invalid ticket (clientIP=%s, ticketHash=%s): %v", funcName, c.ClientIP(), hash, err)
+			sendError(errInvalidTicket, c)
+			return
+		}
+
+		addr, err := stake.AddrFromSStxPkScrCommitment(msgTx.TxOut[1].PkScript, cfg.NetParams)
+		if err != nil {
+			log.Errorf("%s: AddrFromSStxPkScrCommitment error (ticketHash=%s): %v", funcName, hash, err)
+			sendError(errInternalError, c)
+			return
+		}
+
+		commAddr := addr.String()
+		_ = validate(commAddr, commAddr, false, true)
 	}
 
 }

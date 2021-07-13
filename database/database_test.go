@@ -1,4 +1,4 @@
-// Copyright (c) 2020 The Decred developers
+// Copyright (c) 2020-2021 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -38,6 +38,7 @@ func TestDatabase(t *testing.T) {
 	tests := map[string]func(*testing.T){
 		"testCreateNew":         testCreateNew,
 		"testInsertNewTicket":   testInsertNewTicket,
+		"testHasFeeAddress":     testHasFeeAddress,
 		"testGetTicketByHash":   testGetTicketByHash,
 		"testUpdateTicket":      testUpdateTicket,
 		"testTicketFeeExpired":  testTicketFeeExpired,
@@ -47,6 +48,8 @@ func TestDatabase(t *testing.T) {
 		"testDeleteTicket":      testDeleteTicket,
 		"testVoteChangeRecords": testVoteChangeRecords,
 		"testHTTPBackup":        testHTTPBackup,
+		"testAddAltSigHistory":  testAddAltSigHistory,
+		"testAltSigHistory":     testAltSigHistory,
 	}
 
 	for testName, test := range tests {

@@ -10,7 +10,8 @@ are signed by with a private key known only by the server.
 
 Every client request which references a ticket should include a HTTP header
 `VSP-Client-Signature`. The value of this header must be a signature of the
-request body, signed with the commitment address of the referenced ticket.
+request body, signed with the commitment address of the referenced ticket, or
+the alternate signature address if set.
 
 ### Client Accountability Example
 

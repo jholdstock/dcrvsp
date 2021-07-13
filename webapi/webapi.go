@@ -214,6 +214,7 @@ func router(debugMode bool, cookieSecret []byte, dcrd rpc.DcrdConnect, wallets r
 
 	api := router.Group("/api/v3")
 	api.GET("/vspinfo", vspInfo)
+	api.POST("/setaltsig", withDcrdClient(dcrd), broadcastTicket(), vspAuth(), setAltSig)
 	api.POST("/feeaddress", withDcrdClient(dcrd), broadcastTicket(), vspAuth(), feeAddress)
 	api.POST("/ticketstatus", withDcrdClient(dcrd), vspAuth(), ticketStatus)
 	api.POST("/payfee", withDcrdClient(dcrd), vspAuth(), payFee)
